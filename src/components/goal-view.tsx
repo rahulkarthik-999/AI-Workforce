@@ -164,21 +164,25 @@ function ResultCard({ snapshot, onOpenDoc }: { snapshot: Snapshot; onOpenDoc: (d
         <Stat label="Retries" value={String(s.retries)} />
       </div>
       <div className="p-5">
-        <p className="label mb-2">Deliverables</p>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="label">Deliverables</p>
+          {snapshot.documents.length > 0 && <DownloadAll goalId={snapshot.goal.id} />}
+        </div>
         {r.deliverables.length ? (
           <ul className="grid gap-1.5 sm:grid-cols-2">
             {r.deliverables.map((d) => {
               const doc = snapshot.documents.find((x) => x.id === d.documentId);
               return (
-                <li key={d.documentId}>
+                <li key={d.documentId} className="flex items-center gap-1">
                   <button
                     onClick={() => doc && onOpenDoc(doc)}
                     disabled={!doc}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-raised disabled:opacity-60"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-raised disabled:opacity-60"
                   >
                     <Check className="size-3.5 shrink-0 text-ok" aria-hidden />
                     <span className="truncate">{d.title}</span>
                   </button>
+                  {doc && <DownloadIcon docId={doc.id} title={doc.title} />}
                 </li>
               );
             })}
@@ -194,11 +198,17 @@ function ResultCard({ snapshot, onOpenDoc }: { snapshot: Snapshot; onOpenDoc: (d
 function NextBestAction({ rec, onDone }: { rec: Snapshot["recommendations"][number]; onDone: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const needsInput = Boolean(rec.inputRequest);
   async function decide(decision: "APPROVED" | "DISMISSED") {
+    if (decision === "APPROVED" && needsInput && !input.trim()) {
+      setError("Answer the question above so the workforce can continue.");
+      return;
+    }
     setBusy(decision);
     setError(null);
     try {
-      await api(`/api/recommendations/${rec.id}`, { body: { decision } });
+      await api(`/api/recommendations/${rec.id}`, { body: { decision, userInput: decision === "APPROVED" ? input.trim() || undefined : undefined } });
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not record the decision.");
@@ -213,6 +223,28 @@ function NextBestAction({ rec, onDone }: { rec: Snapshot["recommendations"][numb
       </p>
       <h3 className="mt-2 text-base font-semibold leading-snug">{rec.title}</h3>
       <p className="mt-1 text-[13px] leading-relaxed text-muted">{rec.rationale}</p>
+      <label className="mt-4 block">
+        <span className={cx("block text-[13px] leading-relaxed", needsInput ? "font-medium text-fg" : "text-muted")}>
+          {needsInput ? rec.inputRequest : "Anything to add before it runs? (optional)"}
+        </span>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void decide("APPROVED");
+            }
+          }}
+          rows={needsInput ? 4 : 2}
+          maxLength={8000}
+          required={needsInput}
+          aria-required={needsInput}
+          placeholder={needsInput ? "Your answer" : "e.g. Focus on recruiters in India; keep the tone informal"}
+          className={cx(inputClass, "mt-1.5 resize-y")}
+        />
+        <span className="mt-1 block text-xs text-faint">Saved to memory and used to plan the next tasks.</span>
+      </label>
       {error && <ErrorNote className="mt-3">{error}</ErrorNote>}
       <div className="mt-4 flex gap-2">
         <Button size="sm" variant="primary" busy={busy === "APPROVED"} disabled={busy !== null} onClick={() => decide("APPROVED")}>
@@ -388,6 +420,38 @@ function DocumentViewer({ doc, onClose }: { doc: Doc; onClose: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`;
+}
+
+function DownloadIcon({ docId, title }: { docId: string; title: string }) {
+  return (
+    <a
+      href={`/api/documents/${docId}?raw&download`}
+      download
+      className="grid size-8 shrink-0 place-items-center rounded-md text-muted hover:bg-raised hover:text-fg"
+      aria-label={`Download ${title}`}
+      title="Download"
+    >
+      <Download className="size-3.5" aria-hidden />
+    </a>
+  );
+}
+
+function DownloadAll({ goalId, count }: { goalId: string; count?: number }) {
+  return (
+    <a
+      href={`/api/goals/${goalId}/download`}
+      download
+      className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs text-muted hover:bg-raised hover:text-fg"
+    >
+      <Download className="size-3.5" aria-hidden />
+      Download all{count ? ` (${count})` : ""}
+    </a>
   );
 }
 
@@ -658,16 +722,26 @@ export function GoalView({ goalId, initial }: { goalId: string; initial: Snapsho
             )}
           </Panel>
 
-          <Panel title="Deliverables" aside={<span className="tabular font-mono text-[11px] text-faint">{snapshot.documents.length}</span>}>
+          <Panel
+            title="Deliverables"
+            aside={
+              snapshot.documents.length > 0 ? (
+                <DownloadAll goalId={goalId} count={snapshot.documents.length} />
+              ) : (
+                <span className="tabular font-mono text-[11px] text-faint">0</span>
+              )
+            }
+          >
             {snapshot.documents.length ? (
               <ul className="divide-y divide-line">
                 {snapshot.documents.map((d) => (
-                  <li key={d.id}>
-                    <button onClick={() => setDoc(d)} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left hover:bg-raised/50">
+                  <li key={d.id} className="flex items-center pr-2 hover:bg-raised/50">
+                    <button onClick={() => setDoc(d)} className="flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pl-4 pr-2 text-left">
                       {d.mimeType.startsWith("image/") ? <ImageIcon className="size-4 shrink-0 text-faint" aria-hidden /> : <FileText className="size-4 shrink-0 text-faint" aria-hidden />}
                       <span className="min-w-0 flex-1 truncate text-[13px]">{d.title}</span>
-                      <span className="tabular font-mono text-[11px] text-faint">{d.size > 1024 ? `${Math.round(d.size / 1024)} KB` : `${d.size} B`}</span>
+                      <span className="tabular font-mono text-[11px] text-faint">{formatSize(d.mimeType.startsWith("image/") ? Math.round((d.size * 3) / 4) : d.size)}</span>
                     </button>
+                    <DownloadIcon docId={d.id} title={d.title} />
                   </li>
                 ))}
               </ul>

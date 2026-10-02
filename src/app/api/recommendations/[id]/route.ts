@@ -7,13 +7,13 @@ import { parseBody, requestOrigin, route } from "@/lib/http";
 
 export const maxDuration = 300;
 
-const schema = z.object({ decision: z.enum(["APPROVED", "DISMISSED"]) });
+const schema = z.object({ decision: z.enum(["APPROVED", "DISMISSED"]), userInput: z.string().max(8000).optional() });
 
 export const POST = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { actor } = await requireAuth();
   const { id } = await ctx.params;
-  const { decision } = await parseBody(req, schema);
-  const { goalId, resumed } = await decideRecommendation(actor, id, decision);
+  const { decision, userInput } = await parseBody(req, schema);
+  const { goalId, resumed } = await decideRecommendation(actor, id, decision, userInput);
   const origin = requestOrigin(req);
   if (resumed) after(() => driveGoal(goalId, origin));
   return NextResponse.json({ ok: true, goalId, resumed });

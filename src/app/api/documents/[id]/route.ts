@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { requireAuth } from "@/lib/auth";
 import { AppError, assertUuid } from "@/lib/errors";
+import { extensionFor, safeFileName } from "@/lib/files";
 import { route } from "@/lib/http";
 
 export const GET = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -19,12 +20,11 @@ export const GET = route(async (req: Request, ctx: { params: Promise<{ id: strin
   const isImage = doc.mimeType.startsWith("image/");
   const url = new URL(req.url);
   if (url.searchParams.has("raw")) {
-    const safeName = doc.title.replace(/[^a-z0-9-_ ]/gi, "").trim().slice(0, 80) || "document";
     const body = isImage ? Buffer.from(doc.content, "base64") : doc.content;
     return new Response(body, {
       headers: {
         "content-type": isImage ? doc.mimeType : "text/markdown; charset=utf-8",
-        "content-disposition": `${url.searchParams.has("download") ? "attachment" : "inline"}; filename="${safeName}.${isImage ? "png" : "md"}"`,
+        "content-disposition": `${url.searchParams.has("download") ? "attachment" : "inline"}; filename="${safeFileName(doc.title, extensionFor(doc.mimeType))}"`,
         "cache-control": "private, max-age=60",
         // Stored content is model-generated; never let a browser interpret it as active content.
         "content-security-policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",

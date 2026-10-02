@@ -8,6 +8,7 @@ import { normalizePlan } from "@/engine/plan";
 import { computeStats, outcomeStatus } from "@/engine/result";
 import { classifyTask, classifyToolCall, maxRisk, requiresApproval, taskNeedsUpfrontApproval } from "@/engine/risk";
 import { hashPassword, verifyPassword } from "@/lib/auth";
+import { extensionFor, safeFileName, uniqueNames } from "@/lib/files";
 import { evaluate } from "@/tools/calculator";
 import { isPlaceholderHost } from "@/tools/registry";
 import { assertPublicUrl, isBlockedIp } from "@/tools/ssrf";
@@ -284,6 +285,19 @@ describe("invented endpoints", () => {
     for (const u of ["https://httpbin.org/post", "https://api.github.com/repos", "https://examplecorp.io/"]) {
       expect(isPlaceholderHost(u), u).toBe(false);
     }
+  });
+});
+
+describe("download file names", () => {
+  it("produces safe names with the right extension", () => {
+    expect(safeFileName("Create a YouTube Thumbnail / Overlay: v2?", extensionFor("text/markdown"))).toBe("Create-a-YouTube-Thumbnail-Overlay-v2.md");
+    expect(safeFileName("../../etc/passwd", "md")).toBe("etcpasswd.md");
+    expect(safeFileName("\u0000\u202e", "png")).toBe("document.png");
+    expect(extensionFor("image/png")).toBe("png");
+  });
+
+  it("de-duplicates names inside an archive", () => {
+    expect(uniqueNames(["a.md", "a.md", "b.md", "a.md"])).toEqual(["a.md", "a-2.md", "b.md", "a-3.md"]);
   });
 });
 

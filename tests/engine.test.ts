@@ -148,6 +148,50 @@ describe("end to end: goal -> interpretation -> task graph -> agents -> verifica
     await expect(decideRecommendation(actor, snap.recommendations[0]!.id, "DISMISSED")).rejects.toThrow(/already decided/);
   });
 
+  it("asks the user when a next step needs their input, and plans with the answer", async () => {
+    provider.structured.goal_result = (_r, n) =>
+      n === 1
+        ? synthesis({
+            nextBestAction: {
+              title: "Tailor the plan to your product",
+              rationale: "Positioning depends on details only you have.",
+              actionPrompt: "Revise the launch plan using the user's product details.",
+              inputRequest: "Who is your target customer, and what is your price?",
+            },
+          })
+        : synthesis({ nextBestAction: null, learnings: [] });
+    const goal = await startGoal(actor);
+    await drive(goal.id);
+    const rec = (await goalSnapshot(actor, goal.id)).recommendations[0]!;
+    expect(rec.inputRequest).toBe("Who is your target customer, and what is your price?");
+
+    // Approving without the answer is refused and changes nothing.
+    await expect(decideRecommendation(actor, rec.id, "APPROVED", "  ")).rejects.toThrow(/needs your answer/);
+    expect((await goalSnapshot(actor, goal.id)).recommendations[0]!.status).toBe("PENDING");
+
+    provider.structured.task_plan = () => plan([{ key: "revise", dependsOn: ["launch-plan"] }]);
+    await decideRecommendation(actor, rec.id, "APPROVED", "Physio clinics in the UK, $49/month");
+    const s = await drive(goal.id);
+    expect(s.goal.status).toBe("COMPLETED");
+    const followUpPlan = JSON.stringify(provider.calls.filter((c) => c.name === "task_plan").at(-1)!.req.messages);
+    expect(followUpPlan).toContain("Physio clinics in the UK, $49/month");
+    expect(followUpPlan).toContain("authoritative");
+    // The answer is remembered for future goals.
+    const remembered = await listMemories(actor.workspaceId, actor.userId, { category: "PROJECT" });
+    expect(remembered[0]!.content).toBe("Physio clinics in the UK, $49/month");
+  });
+
+  it("passes optional instructions given with an approval into follow-up planning", async () => {
+    const goal = await startGoal(actor);
+    await drive(goal.id);
+    const rec = (await goalSnapshot(actor, goal.id)).recommendations[0]!;
+    provider.structured.task_plan = () => plan([{ key: "email", dependsOn: ["launch-plan"] }]);
+    provider.structured.goal_result = () => synthesis({ nextBestAction: null, learnings: [] });
+    await decideRecommendation(actor, rec.id, "APPROVED", "Keep it under 120 words");
+    await drive(goal.id);
+    expect(JSON.stringify(provider.calls.filter((c) => c.name === "task_plan").at(-1)!.req.messages)).toContain("Keep it under 120 words");
+  });
+
   it("dismissing a recommendation leaves the goal finished", async () => {
     const goal = await startGoal(actor);
     await drive(goal.id);

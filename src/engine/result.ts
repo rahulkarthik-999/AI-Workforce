@@ -45,6 +45,12 @@ const synthesisSchema = z.object({
       title: z.string().describe("Imperative, specific, under 12 words"),
       rationale: z.string().describe("Why this is the most valuable next step, grounded in the results"),
       actionPrompt: z.string().describe("Self-contained instruction for the workforce to carry out this step"),
+      inputRequest: z
+        .string()
+        .nullable()
+        .describe(
+          "If this step cannot be done well without information or a decision only the user has, the exact question(s) to ask them, written to the user. Otherwise null.",
+        ),
     })
     .nullable()
     .describe("The single most valuable next step, or null if nothing useful remains"),
@@ -67,7 +73,8 @@ Rules:
 - Report only what the record shows. Failed, blocked or rejected work must be stated plainly.
 - Never say something was launched, sent or published unless the tool log shows it succeeded.
 - The next best action must follow from the results (e.g. approving/executing the prepared launch, fixing what failed, or the logical next phase).
-- Learnings must cite evidence from this run; do not write generic advice. Keep confidence modest.`;
+- Learnings must cite evidence from this run; do not write generic advice. Keep confidence modest.
+- The workforce cannot talk to the user. When progress depends on the user's information or decisions, the next best action must ask for it through inputRequest - never recommend drafting, sending or collecting a questionnaire.`;
 
 /**
  * Produces the persisted Result for a finished goal, plus the Next Best Action and
@@ -172,6 +179,7 @@ export async function createResult(goal: Goal, goalBrief: string): Promise<{ sta
       title: nba.title.slice(0, 200),
       rationale: nba.rationale,
       actionPrompt: nba.actionPrompt,
+      inputRequest: nba.inputRequest?.trim() || null,
     });
     await emit({ ...base, type: "recommendation.created", message: `Next best action: ${nba.title}` });
   }

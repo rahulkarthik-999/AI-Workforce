@@ -6,6 +6,7 @@ import type { Clarification, Goal } from "@/db/schema";
 import { env } from "@/lib/env";
 import { AppError, assertUuid } from "@/lib/errors";
 import { emit } from "./events";
+import { recordSystemMemory } from "@/memory/service";
 import { blockingQuestions } from "./interpreter";
 
 export type Actor = { userId: string; workspaceId: string };
@@ -173,13 +174,24 @@ export async function decideRecommendation(
   actor: Actor,
   recommendationId: string,
   decision: "APPROVED" | "DISMISSED",
+  userInput?: string,
 ): Promise<{ goalId: string; resumed: boolean }> {
   assertUuid(recommendationId, "Recommendation");
   const db = await getDb();
-  if (decision === "APPROVED") requireProvider();
+  const input = userInput?.trim() || null;
+  if (decision === "APPROVED") {
+    requireProvider();
+    const [pending] = await db
+      .select({ inputRequest: schema.recommendations.inputRequest })
+      .from(schema.recommendations)
+      .where(and(eq(schema.recommendations.id, recommendationId), eq(schema.recommendations.workspaceId, actor.workspaceId)));
+    if (pending?.inputRequest && !input) {
+      throw new AppError("This step needs your answer before it can run. Fill in the box above Approve and run.", 400, "input_required");
+    }
+  }
   const [rec] = await db
     .update(schema.recommendations)
-    .set({ status: decision, decidedById: actor.userId, decidedAt: new Date() })
+    .set({ status: decision, decidedById: actor.userId, decidedAt: new Date(), userInput: decision === "APPROVED" ? input : null })
     .where(
       and(
         eq(schema.recommendations.id, recommendationId),
@@ -202,7 +214,16 @@ export async function decideRecommendation(
     .set({ status: "PLANNING", completedAt: null, error: null })
     .where(and(eq(schema.goals.id, rec.goalId), inArray(schema.goals.status, ["COMPLETED", "PARTIAL", "FAILED"])))
     .returning({ id: schema.goals.id });
-  await emit({ ...base, type: "recommendation.approved", message: `Approved next action: ${rec.title}` });
+  await emit({ ...base, type: "recommendation.approved", message: `Approved next action: ${rec.title}${input ? " (with your input)" : ""}` });
+  if (input) {
+    // What the user tells us is durable project context, not just a one-off instruction.
+    await recordSystemMemory({
+      ...base,
+      category: rec.inputRequest ? "PROJECT" : "DECISION",
+      title: rec.inputRequest ? `Your answer: ${rec.inputRequest}` : `Your instructions for: ${rec.title}`,
+      content: input,
+    });
+  }
   await audit(actor, "recommendation.approved", "recommendation", rec.id);
   return { goalId: rec.goalId, resumed: Boolean(reopened) };
 }

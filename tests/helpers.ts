@@ -125,6 +125,7 @@ export function synthesis(over: Record<string, unknown> = {}) {
       title: "Draft the launch announcement email",
       rationale: "The plan is ready; the announcement is the first execution step.",
       actionPrompt: "Write the launch announcement email based on the launch plan.",
+      inputRequest: null,
     },
     learnings: [
       {

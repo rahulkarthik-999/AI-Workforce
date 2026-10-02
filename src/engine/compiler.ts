@@ -41,6 +41,7 @@ Design the graph for THIS goal - different goals need different graphs. Principl
 - http_request is only for real URLs the user supplied or that research will discover - it is NOT an integration with the user's CRM, email platform, ad accounts, CMS or deployment pipeline. Do not plan "action" tasks against systems that are not connected.
 - Only list tools in requiredTools that are available. If the goal implies an external action that no available tool can perform (publishing a site, posting to social media, running ads), do NOT pretend: plan a task that produces the ready-to-use asset plus exact hand-off steps for the human.
 - Never plan an external action that a COMPLETED task in this goal has already performed; build on its output instead.
+- Agents cannot communicate with the user. Never plan tasks that draft, deliver, send or wait for questions to the user, or that "collect user input". Work from stated assumptions; anything only the user can supply will be asked for after the plan finishes.
 - Respect the user's constraints, deadline and remembered preferences.
 - End with whatever best completes the goal (for example a consolidated plan or launch checklist) - not with a generic "summary" task unless it adds value.`;
 

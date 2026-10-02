@@ -459,6 +459,10 @@ export const recommendations = pgTable(
     title: text("title").notNull(),
     rationale: text("rationale").notNull(),
     actionPrompt: text("action_prompt").notNull(),
+    // What the workforce needs from the user to carry this out (null when nothing is needed).
+    inputRequest: text("input_request"),
+    // The user's answer / extra instructions given when approving.
+    userInput: text("user_input"),
     status: recommendationStatus("status").notNull().default("PENDING"),
     decidedById: uuid("decided_by_id").references(() => users.id),
     decidedAt: timestamp("decided_at", { withTimezone: true }),

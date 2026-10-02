@@ -156,7 +156,11 @@ async function planPhase(goal: Goal, signal: AbortSignal): Promise<void> {
     keyPrefix: `f${n + 1}-`,
     maxTasks: 6,
     signal,
-    directive: `The user approved this next action. Plan only the tasks needed to carry it out, building on completed work:\n${rec.title}\n${rec.actionPrompt}`,
+    directive: `The user approved this next action. Plan only the tasks needed to carry it out, building on completed work:\n${rec.title}\n${rec.actionPrompt}${
+      rec.userInput
+        ? `\n\nThe user provided this input${rec.inputRequest ? ` in answer to "${rec.inputRequest}"` : ""}. It is authoritative and overrides earlier assumptions; make sure every task uses it:\n${rec.userInput}`
+        : ""
+    }`,
   });
   plan.requirements = [];
   const created = await persistPlan(goal, plan);
