@@ -13,7 +13,9 @@ const verdictSchema = z.object({
   score: z.number().describe("0.0-1.0 overall quality against the acceptance criteria"),
   requirementsSatisfied: z.boolean(),
   consistent: z.boolean().describe("False if the output contradicts itself or its inputs"),
-  unsupportedClaims: z.array(z.string()).describe("Claims of external actions or cited facts that the tool log / inputs do not support"),
+  unsupportedClaims: z
+    .array(z.string())
+    .describe("ONLY statements in the output that are fabricated or contradicted by the logs/inputs. Leave EMPTY if there are none - never put comments, praise or observations here"),
   issues: z.array(z.string()).describe("Specific, actionable problems. Empty when verdict is PASS"),
 });
 
@@ -95,14 +97,21 @@ export async function verifyTask(input: {
     ],
   });
 
-  const pass = object.verdict === "PASS" && object.requirementsSatisfied && object.consistent && object.unsupportedClaims.length === 0;
+  // The verdict is the decision. The claims list is evidence for a FAIL; verifiers sometimes
+  // use it for remarks, so on a PASS its entries are recorded as notes instead of vetoing.
+  const pass = object.verdict === "PASS" && object.requirementsSatisfied && object.consistent;
+  const claimsFail = !pass && object.unsupportedClaims.length > 0;
   checks.push(
     { name: "requirements_satisfied", passed: object.requirementsSatisfied, detail: object.requirementsSatisfied ? "Acceptance criteria met" : "Acceptance criteria not met" },
     { name: "internally_consistent", passed: object.consistent, detail: object.consistent ? "No contradictions found" : "Output is inconsistent" },
     {
       name: "claims_supported",
-      passed: object.unsupportedClaims.length === 0,
-      detail: object.unsupportedClaims.length ? object.unsupportedClaims.join("; ").slice(0, 600) : "No unsupported claims found",
+      passed: !claimsFail,
+      detail: claimsFail
+        ? object.unsupportedClaims.join("; ").slice(0, 600)
+        : object.unsupportedClaims.length
+          ? `Verifier notes (not blocking): ${object.unsupportedClaims.join("; ").slice(0, 500)}`
+          : "No unsupported claims found",
     },
   );
   const issues = pass ? [] : [...object.issues, ...object.unsupportedClaims.map((c) => `Unsupported claim: ${c}`)];

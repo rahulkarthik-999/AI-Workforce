@@ -179,6 +179,8 @@ export type TaskInput = {
   deliverable: boolean;
   /** Feedback from a failed verification, fed to the next attempt. */
   repairFeedback?: string[];
+  /** Times this task has waited out a provider rate limit (does not consume retries). */
+  rateLimitWaits?: number;
   /** Set once a task-level approval has been granted. */
   approved?: boolean;
 };

@@ -26,6 +26,8 @@ const HEARTBEAT_MS = 15_000;
 /** Do not start new work after this much of the invocation has elapsed. */
 const DEFAULT_SLICE_MS = 100_000;
 const PHASE_TIMEOUT_MS = 150_000;
+const MAX_RATE_LIMIT_WAITS = 4;
+const RATE_LIMIT_BASE_MS = process.env.NODE_ENV === "test" ? 5 : 8_000;
 
 type Halt = { halt: true; error: string };
 
@@ -292,6 +294,18 @@ async function executeTask(goal: Goal, task: Task, brief: string, memory: string
     // The invocation's time slice ended (or the goal was cancelled): leave the task resumable.
     if (signal.aborted && !(err instanceof TimeoutError)) {
       await db.update(schema.tasks).set({ status: "READY" }).where(and(eq(schema.tasks.id, task.id), eq(schema.tasks.status, "RUNNING")));
+      return;
+    }
+    // A rate limit says nothing about the task: wait it out instead of spending a retry.
+    const waits = task.input.rateLimitWaits ?? 0;
+    if (err instanceof AIError && err.kind === "rate_limit" && waits < MAX_RATE_LIMIT_WAITS) {
+      const delayMs = Math.min(40_000, RATE_LIMIT_BASE_MS * 2 ** waits);
+      await emit({ workspaceId: goal.workspaceId, goalId: goal.id, taskId: task.id, type: "task.retry", level: "warn", message: `Provider rate limit reached; "${task.title}" will resume in ${Math.round(delayMs / 1000)}s` });
+      await new Promise((r) => setTimeout(r, delayMs));
+      await db
+        .update(schema.tasks)
+        .set({ status: "READY", input: { ...task.input, rateLimitWaits: waits + 1 } })
+        .where(and(eq(schema.tasks.id, task.id), eq(schema.tasks.status, "RUNNING")));
       return;
     }
     log.warn("task.error", { goalId: goal.id, taskId: task.id, error: describeError(err) });

@@ -219,7 +219,13 @@ export async function listGoals(actor: Actor, limit = 50) {
   const counts = await db
     .select({ goalId: schema.tasks.goalId, status: schema.tasks.status, n: sql<number>`count(*)::int` })
     .from(schema.tasks)
-    .where(inArray(schema.tasks.goalId, goals.map((g) => g.id)))
+    .where(
+      and(
+        inArray(schema.tasks.goalId, goals.map((g) => g.id)),
+        // Replaced tasks are not part of the plan any more.
+        sql`not (${schema.tasks.status} = 'CANCELLED' and coalesce(${schema.tasks.error}, '') like 'Replaced by the Manager%')`,
+      ),
+    )
     .groupBy(schema.tasks.goalId, schema.tasks.status);
   return goals.map((g) => {
     const mine = counts.filter((c) => c.goalId === g.id);

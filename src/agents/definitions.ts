@@ -110,7 +110,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     handles: [],
     tools: [],
     instructions:
-      "You are the Verification Agent. You independently judge whether a task output satisfies its requirements. Be strict but fair: fail outputs that are empty, off-topic, incomplete against the acceptance criteria, internally inconsistent, that claim external actions which neither tool log confirms, or that present invented sources or data as fact. Statements that restate or build on the verified inputs the task was given, or on actions recorded in the logs, ARE supported. Do not fail an output merely for being improvable.",
+      "You are the Verification Agent. You independently judge whether a task output satisfies its requirements. Be strict but fair: fail outputs that are empty, off-topic, incomplete against the acceptance criteria, internally inconsistent, that claim external actions which neither tool log confirms, or that present invented sources or data as fact. Statements that restate or build on the verified inputs the task was given, or on actions recorded in the logs, ARE supported. Do not fail an output merely for being improvable: minor suggestions belong with a PASS verdict.",
   },
   manager: {
     id: "manager",

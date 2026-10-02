@@ -109,6 +109,12 @@ export async function recoverFailedTask(input: {
       await tx.delete(schema.taskDependencies).where(eq(schema.taskDependencies.dependsOnTaskId, task.id));
       const edges = waiting.flatMap((w) => terminals.map((t) => ({ taskId: w.taskId, dependsOnTaskId: t })));
       if (edges.length) await tx.insert(schema.taskDependencies).values(edges).onConflictDoNothing();
+      // The original is superseded, not merely failed: a later retry must run the
+      // replacement, never both.
+      await tx
+        .update(schema.tasks)
+        .set({ status: "CANCELLED", error: `Replaced by the Manager with a different approach. Original failure: ${reason}`.slice(0, 900) })
+        .where(eq(schema.tasks.id, task.id));
       await tx
         .update(schema.goals)
         .set({ replanCount: sql`${schema.goals.replanCount} + 1` })

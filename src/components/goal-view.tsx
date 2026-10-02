@@ -403,8 +403,12 @@ export function GoalView({ goalId, initial }: { goalId: string; initial: Snapsho
   const now = useNow(streaming);
   const mounted = useMounted();
 
-  const completed = tasks.filter((t) => t.status === "COMPLETED").length;
-  const percent = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
+  // Tasks the Manager replaced stay visible in the graph but do not count toward progress.
+  const replacedIds = useMemo(() => new Set(tasks.map((t) => t.parentTaskId).filter(Boolean)), [tasks]);
+  const isReplaced = (t: Task) => t.status === "CANCELLED" && replacedIds.has(t.id);
+  const counted = tasks.filter((t) => !isReplaced(t));
+  const completed = counted.filter((t) => t.status === "COMPLETED").length;
+  const percent = counted.length ? Math.round((completed / counted.length) * 100) : 0;
   const running = tasks.filter((t) => t.status === "RUNNING");
   const pendingApprovals = snapshot.approvals.filter((a) => a.status === "PENDING");
   const pendingRec = snapshot.recommendations.find((r) => r.status === "PENDING");
@@ -503,7 +507,7 @@ export function GoalView({ goalId, initial }: { goalId: string; initial: Snapsho
           <div className="mb-2 flex items-baseline justify-between">
             <p className="label">Progress</p>
             <p className="tabular font-mono text-xs text-muted">
-              {tasks.length ? `${completed}/${tasks.length} tasks · ${percent}%` : (phaseNote ?? "—")}
+              {tasks.length ? `${completed}/${counted.length} tasks · ${percent}%` : (phaseNote ?? "—")}
             </p>
           </div>
           <ProgressBar percent={percent} tone={goal.status === "FAILED" ? "bad" : goal.status === "COMPLETED" ? "ok" : "accent"} />
@@ -580,7 +584,7 @@ export function GoalView({ goalId, initial }: { goalId: string; initial: Snapsho
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                   <p className="text-sm font-medium">{t.title}</p>
-                                  <StatusBadge status={t.status} />
+                                  {isReplaced(t) ? <span className="font-mono text-[11px] uppercase tracking-wider text-muted">Replaced</span> : <StatusBadge status={t.status} />}
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-faint">
                                   <span className="text-muted">{agentName(t.assignedAgent)}</span>

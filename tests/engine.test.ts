@@ -428,7 +428,10 @@ CAMPAIGN-RESULT-MARKER` } : { toolCalls: [{ name: "send_campaign", input: { audi
     provider.structured.verification_verdict = (req) => verdict(!JSON.stringify(req.messages).includes("# Task\\nBad task"));
     provider.structured.recovery_decision = () => ({ decision: "replace", reasoning: "A narrower scope can work", approach: "Narrow the scope" });
     const s = await drive((await startGoal(actor)).id);
-    expect(s.byKey.bad!.status).toBe("FAILED");
+    // The original is superseded: retrying the goal must never run it alongside its replacement.
+    expect(s.byKey.bad!.status).toBe("CANCELLED");
+    expect(s.byKey.bad!.error).toMatch(/^Replaced by the Manager/);
+    expect(s.goal.status).toBe("COMPLETED");
     expect(s.byKey["r1-alt"]).toMatchObject({ status: "COMPLETED", parentTaskId: s.byKey.bad!.id });
     expect(s.byKey.child!.status).toBe("COMPLETED");
     expect(s.goal.replanCount).toBe(1);
@@ -454,6 +457,34 @@ CAMPAIGN-RESULT-MARKER` } : { toolCalls: [{ name: "send_campaign", input: { audi
     provider.agent = () => ({ text: LONG_OUTPUT });
     await resumeGoal(actor, goal.id);
     expect((await drive(goal.id)).goal.status).toBe("COMPLETED");
+  });
+
+  it("passes an output the verifier approved even if it left remarks in the claims field", async () => {
+    provider.structured.task_plan = () => plan([{ key: "copy" }]);
+    provider.structured.verification_verdict = () => ({ ...verdict(true), score: 0.97, unsupportedClaims: ["Output correctly documents absence and does not invent details."] });
+    const s = await drive((await startGoal(actor)).id);
+    expect(s.byKey.copy).toMatchObject({ status: "COMPLETED", retryCount: 0 });
+    expect(s.byKey.copy!.verification?.checks.find((c) => c.name === "claims_supported")).toMatchObject({ passed: true, detail: expect.stringContaining("not blocking") });
+  });
+
+  it("still fails an output when the verifier rejects it for unsupported claims", async () => {
+    provider.structured.task_plan = () => plan([{ key: "copy" }]);
+    provider.structured.verification_verdict = () => ({ ...verdict(false, []), unsupportedClaims: ["Claims 10,000 customers; no source."] });
+    const s = await drive((await startGoal(actor)).id);
+    expect(s.byKey.copy!.status).toBe("FAILED");
+    expect(s.byKey.copy!.verification?.issues).toContain("Unsupported claim: Claims 10,000 customers; no source.");
+  });
+
+  it("waits out provider rate limits without spending task retries", async () => {
+    provider.structured.task_plan = () => plan([{ key: "copy" }]);
+    let n = 0;
+    provider.agent = () => {
+      if (++n <= 3) throw new AIError("openai rate limit reached.", "rate_limit", "openai");
+      return { text: LONG_OUTPUT };
+    };
+    const s = await drive((await startGoal(actor)).id);
+    expect(s.byKey.copy).toMatchObject({ status: "COMPLETED", retryCount: 0 });
+    expect(s.byKey.copy!.input.rateLimitWaits).toBe(3);
   });
 
   it("retries a task whose agent call throws a transient error", async () => {

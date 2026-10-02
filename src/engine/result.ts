@@ -76,7 +76,10 @@ Rules:
  */
 export async function createResult(goal: Goal, goalBrief: string): Promise<{ status: "COMPLETED" | "PARTIAL" | "FAILED" }> {
   const db = await getDb();
-  const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.goalId, goal.id));
+  const allTasks = await db.select().from(schema.tasks).where(eq(schema.tasks.goalId, goal.id));
+  // Tasks the Manager replaced are bookkeeping, not outcomes: their replacements are what count.
+  const replaced = new Set(allTasks.map((t) => t.parentTaskId).filter(Boolean));
+  const tasks = allTasks.filter((t) => !(t.status === "CANCELLED" && replaced.has(t.id)));
   const docs = await db
     .select({ id: schema.documents.id, title: schema.documents.title })
     .from(schema.documents)
