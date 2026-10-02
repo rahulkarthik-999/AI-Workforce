@@ -56,7 +56,7 @@ function mapError(err: unknown): never {
   }
   if (err instanceof Anthropic.APIError) {
     const status = err.status ?? 0;
-    throw new AIError(`Anthropic API error ${status}: ${err.message}`, status >= 500 ? "transient" : "invalid", PROVIDER);
+    throw new AIError(`Anthropic API error ${status}: ${err.message}`, status >= 500 ? "transient" : "request", PROVIDER);
   }
   throw err;
 }

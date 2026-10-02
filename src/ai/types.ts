@@ -56,7 +56,12 @@ export interface AIProvider {
   structuredOutput<T>(req: StructuredRequest<T>): Promise<StructuredResult<T>>;
 }
 
-export type AIErrorKind = "config" | "rate_limit" | "transient" | "invalid" | "refusal";
+/**
+ * config    - credentials / model / endpoint are wrong; nothing will work until fixed
+ * request   - the provider rejected the request itself (HTTP 4xx); repeating it cannot help
+ * invalid   - the model's output failed validation; a fresh attempt may succeed
+ */
+export type AIErrorKind = "config" | "request" | "rate_limit" | "transient" | "invalid" | "refusal";
 
 export class AIError extends Error {
   constructor(

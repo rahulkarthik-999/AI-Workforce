@@ -69,6 +69,7 @@ export class OpenAICompatibleProvider implements AIProvider {
   readonly id: string;
   readonly models: Record<ModelTier, string>;
   private client: OpenAI;
+  private toolsNeedReasoningOff = new Set<string>();
 
   constructor(private opts: OpenAICompatibleOptions) {
     this.id = opts.id;
@@ -101,7 +102,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     }
     if (err instanceof OpenAI.APIError) {
       const status = err.status ?? 0;
-      throw new AIError(`${this.id} API error ${status}: ${err.message}`, status >= 500 ? "transient" : "invalid", this.id);
+      throw new AIError(`${this.id} API error ${status}: ${err.message}`, status >= 500 ? "transient" : "request", this.id);
     }
     throw err;
   }
@@ -117,24 +118,40 @@ export class OpenAICompatibleProvider implements AIProvider {
   async stream(req: GenerateRequest, onText: (delta: string) => void): Promise<GenerateResult> {
     const model = this.models[req.tier ?? "main"];
     try {
-      const stream = await this.client.chat.completions.create(
-        {
-          model,
-          messages: toChatMessages(req.system, req.messages),
-          stream: true,
-          stream_options: { include_usage: true },
-          ...this.tokenLimit(req),
-          ...(req.tools?.length
-            ? {
-                tools: req.tools.map((t) => ({
-                  type: "function" as const,
-                  function: { name: t.name, description: t.description, parameters: t.inputSchema },
-                })),
-              }
-            : {}),
-        },
-        { signal: req.signal },
-      );
+      const hasTools = Boolean(req.tools?.length);
+      const open = (noReasoning: boolean) =>
+        this.client.chat.completions.create(
+          {
+            model,
+            messages: toChatMessages(req.system, req.messages),
+            stream: true,
+            stream_options: { include_usage: true },
+            ...this.tokenLimit(req),
+            ...(hasTools
+              ? {
+                  tools: req.tools!.map((t) => ({
+                    type: "function" as const,
+                    function: { name: t.name, description: t.description, parameters: t.inputSchema },
+                  })),
+                }
+              : {}),
+            ...(noReasoning ? { reasoning_effort: "none" } : {}),
+          } as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+          { signal: req.signal },
+        );
+
+      // Some reasoning models refuse function tools on this endpoint unless reasoning is
+      // switched off, while non-reasoning models reject the parameter outright. So we learn
+      // it per model: on that specific refusal, retry once with reasoning off and remember.
+      let stream;
+      try {
+        stream = await open(hasTools && this.toolsNeedReasoningOff.has(model));
+      } catch (err) {
+        const refused = hasTools && !this.toolsNeedReasoningOff.has(model) && err instanceof OpenAI.BadRequestError && /reasoning_effort/i.test(err.message);
+        if (!refused) throw err;
+        this.toolsNeedReasoningOff.add(model);
+        stream = await open(true);
+      }
 
       let text = "";
       let finish: string | null = null;

@@ -88,7 +88,7 @@ function Questions({ goalId, questions, onDone }: { goalId: string; questions: S
 
 function FailurePanel({ goalId, error, onDone }: { goalId: string; error: string; onDone: () => void }) {
   const budget = /budget/i.test(error);
-  const config = /configured|API key|not set|quota/i.test(error);
+  const config = /configured|API key|not set|quota|provider rejected/i.test(error);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [extra, setExtra] = useState("2");

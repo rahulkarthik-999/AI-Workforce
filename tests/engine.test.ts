@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { setProviderOverride } from "@/ai";
+import { AIError, setProviderOverride } from "@/ai";
 import { getDb, resetDb, schema } from "@/db";
 import { answerQuestions, cancelGoal, decideApproval, decideRecommendation, getGoal, goalSnapshot, resumeGoal, type Actor } from "@/engine/service";
 import { rateLimit } from "@/lib/http";
@@ -435,6 +435,25 @@ CAMPAIGN-RESULT-MARKER` } : { toolCalls: [{ name: "send_campaign", input: { audi
     expect(s.types).toContain("goal.replanned");
     const childCall = provider.calls.find((c) => c.kind === "generate" && taskPrompt(c.req).includes("**Child task**"))!;
     expect(taskPrompt(childCall.req)).toContain("## Alternative approach");
+  });
+
+  it("halts once, without retries or replans, when the provider rejects the request itself", async () => {
+    provider.structured.task_plan = () => plan([{ key: "a" }, { key: "b", dependsOn: ["a"] }]);
+    provider.agent = () => {
+      throw new AIError("openai API error 400: Function tools with reasoning_effort are not supported", "request", "openai");
+    };
+    const goal = await startGoal(actor);
+    const s = await drive(goal.id);
+    expect(s.goal.status).toBe("FAILED");
+    expect(s.goal.error).toMatch(/provider rejected the request.*Function tools with reasoning_effort/);
+    expect(provider.calls.filter((c) => c.kind === "generate")).toHaveLength(1);
+    expect(provider.count("recovery_decision")).toBe(0);
+    expect(s.types).not.toContain("task.retry");
+    // Nothing was burned: the task is ready to run again once the configuration is fixed.
+    expect(s.byKey.a).toMatchObject({ status: "READY", retryCount: 0 });
+    provider.agent = () => ({ text: LONG_OUTPUT });
+    await resumeGoal(actor, goal.id);
+    expect((await drive(goal.id)).goal.status).toBe("COMPLETED");
   });
 
   it("retries a task whose agent call throws a transient error", async () => {

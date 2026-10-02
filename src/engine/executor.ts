@@ -33,6 +33,11 @@ type Halt = { halt: true; error: string };
 function fatal(err: unknown): string | null {
   if (err instanceof BudgetExceededError || err instanceof ConfigError) return err.message;
   if (err instanceof AIError && err.kind === "config") return err.message;
+  // The provider rejected the request shape itself. Retrying or replanning would send the
+  // same request again, so stop once with the provider's own explanation.
+  if (err instanceof AIError && err.kind === "request") {
+    return `The AI provider rejected the request and retrying cannot fix it: ${err.message} Check AI_MODEL / provider settings, then retry.`;
+  }
   return null;
 }
 
